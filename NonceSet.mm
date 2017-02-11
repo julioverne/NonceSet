@@ -159,6 +159,17 @@ int main(int argc, char **argv)
 		return comd;
 	}
 }
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
+{
+	@autoreleasepool {
+		system("nvram -d com.apple.System.boot-nonce");
+		NSString* nonce = [self readNonceValue:nil];
+		UIAlertView *alert = [[UIAlertView alloc] initWithTitle:self.title message:([nonce length] < 2)?@"Nonce has been deleted successfully.":@"Error in delete Nonce." delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil];
+		[alert show];
+		[self refresh:nil];
+	}
+}
+
 - (void)_returnKeyPressed:(id)arg1
 {
 	[super _returnKeyPressed:arg1];
@@ -189,16 +200,18 @@ int main(int argc, char **argv)
 	[self refresh:nil];
 }
 
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath 
+{
+	return (indexPath.section == 0);
+}
 - (BOOL)tableView:(UITableView *)tableView shouldShowMenuForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     return (indexPath.section == 0);
 }
-
 - (BOOL)tableView:(UITableView *)tableView canPerformAction:(SEL)action forRowAtIndexPath:(NSIndexPath *)indexPath withSender:(id)sender
 {
     return (action == @selector(copy:));
 }
-
 - (void)tableView:(UITableView *)tableView performAction:(SEL)action forRowAtIndexPath:(NSIndexPath *)indexPath withSender:(id)sender
 {
     if (action == @selector(copy:)) {
