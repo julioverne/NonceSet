@@ -1,22 +1,16 @@
-#import <dlfcn.h>
-#import <objc/runtime.h>
-#import <sys/stat.h>
-#import <Social/Social.h>
-#import <Foundation/NSTask.h>
-#import <prefs.h>
+#import "NonceSet.h"
 
-@interface NonceSetApplication : UIApplication <UIApplicationDelegate> {
-	UIWindow *_window;
-	UIViewController *_viewController;
-}
-@property (nonatomic, retain) UIWindow *window;
-@end
+#import "WebViewDBController.h"
+#include "WebViewDBController.m"
+
+
+
 @implementation NonceSetApplication
 @synthesize window = _window;
 - (void)applicationDidFinishLaunching:(UIApplication *)application
 {
 	_window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-	_viewController = [[UINavigationController alloc] initWithRootViewController:[[objc_getClass("NonceSetController") alloc] init]];
+	_viewController = [[UINavigationController alloc] initWithRootViewController:[NonceSetController shared]];
 	[_window addSubview:_viewController.view];
 	_window.rootViewController = _viewController;
 	[_window makeKeyAndVisible];
@@ -33,16 +27,7 @@ int main(int argc, char **argv)
 	}
 }
 
-@interface UIProgressHUD : UIView
-- (void) showInView:(UIView *)view;
-- (void) setText:(NSString *)text;
-- (void) done;
-- (void) hide;
-@end
 
-@interface NSString (NonceSet)
-- (NSString *)runAsCommand;
-@end
 
 @implementation NSString (NonceSet)
 - (NSString*)runAsCommand
@@ -60,15 +45,31 @@ int main(int argc, char **argv)
 
 
 
-@interface NonceSetController : PSListController
-@end
 
+static __strong NonceSetController* NonceSetControllerCC;
 @implementation NonceSetController
++ (NonceSetController*)shared
+{
+	if(!NonceSetControllerCC) {
+		NonceSetControllerCC = [[[self class] alloc] init];
+	}
+	return NonceSetControllerCC;
+}
 - (id)specifiers {
 	if (!_specifiers) {
 		NSMutableArray* specifiers = [NSMutableArray array];
 		PSSpecifier* spec;
 		
+		spec = [PSSpecifier preferenceSpecifierNamed:@"Current Nonce"
+						      target:self
+											  set:Nil
+											  get:Nil
+					      detail:Nil
+											  cell:PSGroupCell
+											  edit:Nil];
+		[spec setProperty:@"Current Nonce" forKey:@"label"];
+		[spec setProperty:@"Current com.apple.System.boot-nonce in nvram." forKey:@"footerText"];
+		[specifiers addObject:spec];
 		spec = [PSSpecifier preferenceSpecifierNamed:@"boot-nonce"
 					      target:self
 						 set:NULL
@@ -100,12 +101,68 @@ int main(int argc, char **argv)
 		[spec setProperty:@"NonceSet" forKey:@"key"];
 		[specifiers addObject:spec];
 		
+		spec = [PSSpecifier preferenceSpecifierNamed:@"Dropbox"
+						      target:self
+											  set:Nil
+											  get:Nil
+					      detail:Nil
+											  cell:PSGroupCell
+											  edit:Nil];
+		[spec setProperty:@"Dropbox" forKey:@"label"];
+		[spec setProperty:@"You can restore your boot-nonce from Dropbox Account after a full restore of your Device." forKey:@"footerText"];
+		[specifiers addObject:spec];
+		spec = [PSSpecifier preferenceSpecifierNamed:@"Save/Restore Now"
+					      target:self
+						 set:NULL
+						 get:NULL
+					      detail:Nil
+						cell:PSButtonCell
+						edit:Nil];
+		spec->action = @selector(pushDropBox);
+		[spec setProperty:NSClassFromString(@"SSTintedCell") forKey:@"cellClass"];
+		[specifiers addObject:spec];
+		
+		spec = [PSSpecifier preferenceSpecifierNamed:@"ECID"
+		                                      target:self
+											  set:Nil
+											  get:Nil
+                                              detail:Nil
+											  cell:PSGroupCell
+											  edit:Nil];
+		[spec setProperty:@"ECID" forKey:@"label"];
+		[specifiers addObject:spec];
+		spec = [PSSpecifier preferenceSpecifierNamed:@"Decimal"
+					      target:self
+						 set:NULL
+						 get:@selector(ecidValue:)
+					      detail:Nil
+						cell:PSTitleValueCell
+						edit:Nil];
+		[specifiers addObject:spec];
+		spec = [PSSpecifier preferenceSpecifierNamed:@"Hexadecimal"
+					      target:self
+						 set:NULL
+						 get:@selector(ecidHexValue:)
+					      detail:Nil
+						cell:PSTitleValueCell
+						edit:Nil];
+		[specifiers addObject:spec];
+		
+		
 		spec = [PSSpecifier emptyGroupSpecifier];
         [spec setProperty:@"NonceSet © 2017 julioverne" forKey:@"footerText"];
         [specifiers addObject:spec];
 		_specifiers = [specifiers copy];
 	}
 	return _specifiers;
+}
+- (id)ecidValue:(PSSpecifier*)specifier
+{
+	return [NSString stringWithFormat:@"%@", (__bridge NSString *)MGCopyAnswer(CFSTR("UniqueChipID"))];
+}
+- (id)ecidHexValue:(PSSpecifier*)specifier
+{
+	return [NSString stringWithFormat:@"%lX", (unsigned long)[[self ecidValue:nil] integerValue]];
 }
 - (void)refresh:(UIRefreshControl *)refresh
 {
@@ -194,6 +251,13 @@ int main(int argc, char **argv)
 	}
 }
 
+- (void)pushDropBox
+{
+	@try {
+		[self.navigationController pushViewController:[[WebViewDBController alloc] initDropboxType:2] animated:YES];
+	} @catch (NSException * e) {
+	}
+}
 - (void)viewWillAppear:(BOOL)animated
 {
 	[super viewWillAppear:animated];
@@ -206,7 +270,7 @@ int main(int argc, char **argv)
 }
 - (BOOL)tableView:(UITableView *)tableView shouldShowMenuForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    return (indexPath.section == 0);
+    return YES;
 }
 - (BOOL)tableView:(UITableView *)tableView canPerformAction:(SEL)action forRowAtIndexPath:(NSIndexPath *)indexPath withSender:(id)sender
 {
