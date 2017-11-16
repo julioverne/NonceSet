@@ -5,19 +5,19 @@
 OBJC_EXTERN CFStringRef MGCopyAnswer(CFStringRef key) WEAK_IMPORT_ATTRIBUTE;
 
 static __strong NSString* oauth_consumer_key = @"3wg57gho3rco3lb";
-static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 
 @implementation WebViewDBController
 
-@synthesize webView, startURL, returnURL, oauth_token, oauth_token_secret, type;
+@synthesize webView, startURL, returnURL, access_token, type;
 @dynamic loadingView;
 
 - (id)initDropboxType:(int)typenew
 {
     if (self = [super init]) {
+		self.access_token = nil;
 		self.type = typenew;
-		self.startURL = [NSString stringWithFormat:@"https://www.dropbox.com/1/connect_login?k=%@&s=%@&state=%@&easl=1&dca=1", oauth_consumer_key, oauth_consumer_key_secret, [[NSUUID UUID] UUIDString]];
-		self.returnURL = [@"db-" stringByAppendingString:oauth_consumer_key];
+		self.returnURL = [[@"db-" stringByAppendingString:oauth_consumer_key] stringByAppendingString:@"://2/token"];
+		self.startURL = [NSString stringWithFormat:@"https://www.dropbox.com/1/oauth2/authorize?response_type=token&client_id=%@&redirect_uri=%@&disable_signup=true", oauth_consumer_key, self.returnURL];
     }
     return self;
 }
@@ -27,32 +27,36 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 }
 - (void)showAlertManager
 {
-	if(type == 1) {
-		[self showAlertManagerBackup];
-	} else if(type == 2) {
-		[self showAlertManagerSource];
+	if(self.access_token && self.access_token.length > 0) {
+		if(type == 1) {
+			[self showAlertManagerBackup];
+		} else if(type == 2) {
+			[self showAlertManagerSource];
+		}
+	} else {
+		[self loadLogin];
 	}
 }
 - (void)showAlertManagerSource
 {
-	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Save/Restore Backups Online (Dropbox)" message:@"Choose Action\n\nNote: Upload Backups to Dropbox will replace existing Backups file on account." delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Download Backups To This Device", @"Upload Backups Of This Device To Dropbox", nil];
+	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Save/Restore Backups Online (Dropbox)" message:@"Choose Action\n\nNote: Upload Backups to Dropbox will replace existing Backups file on account." delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Download Backups To This Device", @"Upload Backups Of This Device To Dropbox", @"Logout Account", nil];
 	alert.tag = 1;
 	[alert show];
 }
 
 - (void)showAlertManagerBackup
 {
-	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Save/Restore Backups Online (Dropbox)" message:@"Choose Action\n\nNote: Upload Backups to Dropbox will replace existing Backups file on account." delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Download Backups To This Device", @"Upload Backups Of This Device To Dropbox", nil];
+	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Save/Restore Backups Online (Dropbox)" message:@"Choose Action\n\nNote: Upload Backups to Dropbox will replace existing Backups file on account." delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Download Backups To This Device", @"Upload Backups Of This Device To Dropbox", @"Logout Account", nil];
 	alert.tag = 1;
 	[alert show];
 }
 - (void)saveTokens
 {
-	if(!oauth_token || !oauth_token_secret) {
+	if(!self.access_token) {
 		return;
 	}
 	@autoreleasepool {
-		[[NSUserDefaults standardUserDefaults] setObject:[[NSString stringWithFormat:[[@"%@" stringByAppendingString:@"|"] stringByAppendingString:@"%@"], oauth_token, oauth_token_secret] dataUsingEncoding:NSUTF8StringEncoding] forKey:@"db"];
+		[[NSUserDefaults standardUserDefaults] setObject:[self.access_token dataUsingEncoding:NSUTF8StringEncoding] forKey:@"db-access_token"];
 		[[NSUserDefaults standardUserDefaults] synchronize];
 	}
 }
@@ -62,16 +66,11 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 	webView = [[UIWebView alloc] initWithFrame:CGRectZero];
 	webView.delegate = self;
 	self.view = webView;
-	NSData* credData = [[NSUserDefaults standardUserDefaults] objectForKey:@"db"];
+	NSData* credData = [[NSUserDefaults standardUserDefaults] objectForKey:@"db-access_token"]?:nil;
 	if(credData) {
-		NSString *cred = [[NSString alloc] initWithData:credData encoding:NSUTF8StringEncoding];
-		NSArray *pairComponents = [cred componentsSeparatedByString:@"|"];
-		oauth_token = pairComponents[0];
-		oauth_token_secret = pairComponents[1];
-		[self showAlertManager];
-	} else {
-		[self loadLogin];
-	}	
+		self.access_token = [[NSString alloc] initWithData:credData encoding:NSUTF8StringEncoding];
+	}
+	[self showAlertManager];
 }
 - (void)viewDidLoad
 {
@@ -129,7 +128,7 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 - (void)receiveURLToken:(NSString*)URLToken
 {
 	NSURL* urlTK = [NSURL URLWithString:URLToken];
-	NSString* queryst = [urlTK query];
+	NSString* queryst = [urlTK fragment];
 	if(!queryst) {
 		return;
 	}
@@ -141,8 +140,7 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 		NSString *value = [[pairComponents lastObject] stringByRemovingPercentEncoding];
 		[queryStringDictionary setObject:value forKey:key];
 	}
-	oauth_token = [queryStringDictionary objectForKey:@"oauth_token"]?:oauth_token;
-	oauth_token_secret = [queryStringDictionary objectForKey:@"oauth_token_secret"]?:oauth_token_secret;
+	self.access_token = [queryStringDictionary objectForKey:@"access_token"]?:self.access_token;
 	[self saveTokens];
 	[self showAlertManager];	
 }
@@ -154,65 +152,39 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 }
 - (NSMutableURLRequest*)downloadRequest:(NSString*)file
 {
-	NSString* url_reqA = [[@"https://api-content.dropbox.com/1" stringByAppendingPathComponent:@"files"] stringByAppendingPathComponent:@"dropbox/%@?"];
-	url_reqA = [url_reqA stringByAppendingString:@"locale"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_consumer_key"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_nonce"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_signature_method"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_timestamp"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_token"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_version"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_signature"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@"];
-	url_reqA = [url_reqA stringByAppendingString:@"%@"];
-	url_reqA = [NSString stringWithFormat:url_reqA, file, @"en", oauth_consumer_key,
-	[[NSUUID UUID] UUIDString], @"PLAINTEXT", [NSString stringWithFormat:@"%d", (int)[[NSDate date] timeIntervalSince1970]],
-	oauth_token, @"1.0", @"l8sby6hgovlt6te%26", oauth_token_secret];
+	NSString* url_reqA = [[@"https://api-content.dropbox.com/2" stringByAppendingPathComponent:@"files"] stringByAppendingPathComponent:@"download"];
 	NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init];
 	[request setURL:[NSURL URLWithString:url_reqA]];
-	[request setHTTPMethod:@"GET"];
+	[request setHTTPMethod:@"POST"];
+	[request setValue:[NSString stringWithFormat:@"Bearer %@", self.access_token] forHTTPHeaderField:@"Authorization"];
+	[request setValue:[NSString stringWithFormat:@"{\"path\":\"%@\"}", file] forHTTPHeaderField:@"Dropbox-API-Arg"];
 	return request;
 }
 - (NSMutableURLRequest*)uploadRequest:(NSString*)file
 {
-	NSString* url_reqA = [[@"https://api-content.dropbox.com/1" stringByAppendingPathComponent:@"files_put"] stringByAppendingPathComponent:@"dropbox/%@?"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_consumer_key"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_nonce"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_signature_method"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_timestamp"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_token"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_version"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"overwrite"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@&"];
-	url_reqA = [url_reqA stringByAppendingString:@"oauth_signature"];
-	url_reqA = [url_reqA stringByAppendingString:@"=%@"];
-	url_reqA = [url_reqA stringByAppendingString:@"%@"];
-	url_reqA = [NSString stringWithFormat:url_reqA, file, oauth_consumer_key,
-	[[NSUUID UUID] UUIDString], @"PLAINTEXT", [NSString stringWithFormat:@"%d", (int)[[NSDate date] timeIntervalSince1970]],
-	oauth_token, @"1.0", @"true", @"l8sby6hgovlt6te%26", oauth_token_secret];
-	NSMutableURLRequest* request = [[NSMutableURLRequest alloc] init];
+	NSString* url_reqA = [[@"https://api-content.dropbox.com/2" stringByAppendingPathComponent:@"files"] stringByAppendingPathComponent:@"upload"];
+	NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init];
 	[request setURL:[NSURL URLWithString:url_reqA]];
 	[request setHTTPMethod:@"POST"];
-	[request setValue:@"application/octet-stream" forHTTPHeaderField: @"Content-Type"];
+	[request setValue:[NSString stringWithFormat:@"Bearer %@", self.access_token] forHTTPHeaderField:@"Authorization"];
+	[request setValue:[NSString stringWithFormat:@"{\"path\":\"%@\",\"autorename\":false,\"mute\":false,\"mode\":{\".tag\":\"overwrite\"}}", file] forHTTPHeaderField:@"Dropbox-API-Arg"];
+	[request setValue:@"application/octet-stream" forHTTPHeaderField:@"Content-Type"];
 	return request;
 }
 - (void)alertView:(UIAlertView *)alertView didDismissWithButtonIndex:(NSInteger)buttonIndex
 {
-    if (alertView.tag == 1 && buttonIndex == 1) {//Download Backup
-        NSMutableURLRequest* request = [self downloadRequest:[NSString stringWithFormat:@"nonceset_%@.plist", (__bridge NSString *)MGCopyAnswer(CFSTR("UniqueChipID"))]];
+	if(buttonIndex == [alertView cancelButtonIndex]) {
+		return;
+	}
+	NSString* buttonTitle = [[alertView buttonTitleAtIndex:buttonIndex] copy];
+	
+	if (alertView.tag == 1 && [buttonTitle isEqualToString:@"Logout Account"]) {
+		@autoreleasepool {
+			[[NSUserDefaults standardUserDefaults] removeObjectForKey:@"db-access_token"];
+			[[NSUserDefaults standardUserDefaults] synchronize];
+		}
+    } else if (alertView.tag == 1 && buttonIndex == 1) {//Download Backup
+        NSMutableURLRequest* request = [self downloadRequest:[NSString stringWithFormat:@"/nonceset_%@.plist", (__bridge NSString *)MGCopyAnswer(CFSTR("UniqueChipID"))]];
 		NSError* error = nil;
 		NSURLResponse* imageresponse_link = nil;
 		NSHTTPURLResponse *httpResponse_link = nil;
@@ -241,7 +213,7 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 			return;
 		}		
     } else if (alertView.tag == 1 && buttonIndex == 2) {//Upload Backup
-		NSMutableURLRequest* request = [self uploadRequest:[NSString stringWithFormat:@"nonceset_%@.plist", (__bridge NSString *)MGCopyAnswer(CFSTR("UniqueChipID"))]];
+		NSMutableURLRequest* request = [self uploadRequest:[NSString stringWithFormat:@"/nonceset_%@.plist", (__bridge NSString *)MGCopyAnswer(CFSTR("UniqueChipID"))]];
 		NSString* currentBootNonce = [[NonceSetController shared] readNonceValue:nil];
 		NSData *fileData = nil;
 		if(currentBootNonce && currentBootNonce.length > 0) {
@@ -268,7 +240,7 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 		if (httpResponse_link.statusCode == 200) {
 			NSDictionary *json_imageresult_link = [NSJSONSerialization JSONObjectWithData:imageresult_link options:kNilOptions error:&error];
 			if(json_imageresult_link) {
-				if(fileData && [[json_imageresult_link objectForKey:@"bytes"]?:@(0) intValue] == fileData.length) {
+				if(fileData && [[json_imageresult_link objectForKey:@"size"]?:@(0) intValue] == fileData.length) {
 					UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Save/Restore Backups Online (Dropbox)" message:@"Backups Of This Device Uploaded To Dropbox With Success." delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil];
 					[alert show];
 				}
@@ -286,8 +258,8 @@ static __strong NSString* oauth_consumer_key_secret = @"7eba9bba";
 {
 	NSString *urlString = [[request.URL absoluteString] lowercaseString];
 	if (urlString && urlString.length>0) {
-		if ([urlString rangeOfString:[returnURL lowercaseString]].location != NSNotFound) {
-			[self receiveURLToken:urlString];
+		if ([urlString hasPrefix:[returnURL lowercaseString]]) {
+			[self receiveURLToken:[request.URL absoluteString]];
 			return FALSE;
 		}
 	}
